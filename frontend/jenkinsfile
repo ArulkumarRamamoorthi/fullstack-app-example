@@ -1,0 +1,113 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
+        DOCKERHUB_USER = 'arulkumar306'
+        BACKEND_IMAGE = "arulkumar306/backend"
+        FRONTEND_IMAGE = "arulkumar306/frontend"
+        BACKEND_CONTAINER = "backend-container"
+        FRONTEND_CONTAINER = "frontend-container"
+    }
+
+    tools {
+        jdk 'jdk17'
+        nodejs 'node25'
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/your-repo-url.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                dir('backend') {
+                    sh 'npm ci'
+                }
+                dir('frontend') {
+                    sh 'npm ci'
+                }
+            }
+        }
+
+        stage('Trivy File Scan') {
+            steps {
+                sh '''
+                echo "Scanning source files..."
+                trivy fs --exit-code 0 --severity HIGH,CRITICAL .
+                '''
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                sh '''
+                echo "Building Docker images..."
+                docker build -t ${BACKEND_IMAGE}:latest ./backend
+                docker build -t ${FRONTEND_IMAGE}:latest ./frontend
+                '''
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh '''
+                echo "Scanning backend image..."
+                trivy image --exit-code 0 --severity HIGH,CRITICAL ${BACKEND_IMAGE}:latest || true
+                echo "Scanning frontend image..."
+                trivy image --exit-code 0 --severity HIGH,CRITICAL ${FRONTEND_IMAGE}:latest || true
+                '''
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                sh '''
+                echo "Pushing images to Docker Hub..."
+                echo "$DOCKERHUB_CREDENTIALS_PSW" | docker login -u "$DOCKERHUB_CREDENTIALS_USR" --password-stdin
+                docker push ${BACKEND_IMAGE}:latest
+                docker push ${FRONTEND_IMAGE}:latest
+                docker logout
+                '''
+            }
+        }
+
+        stage('Deploy from Docker Hub') {
+            steps {
+                sh '''
+                echo "Deploying containers using Docker Hub images..."
+
+                echo "Removing old containers..."
+                docker rm -f ${BACKEND_CONTAINER} || true
+                docker rm -f ${FRONTEND_CONTAINER} || true
+
+                echo "Pulling latest images from Docker Hub..."
+                docker pull ${BACKEND_IMAGE}:latest
+                docker pull ${FRONTEND_IMAGE}:latest
+
+                echo "Running new backend container..."
+                docker run -d --name ${BACKEND_CONTAINER} -p 3000:3000 ${BACKEND_IMAGE}:latest
+
+                echo "Running new frontend container..."
+                docker run -d --name ${FRONTEND_CONTAINER} -p 80:80 ${FRONTEND_IMAGE}:latest
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning workspace...'
+            cleanWs()
+        }
+        success {
+            echo 'Build, Push, and Deploy completed successfully!'
+        }
+        failure {
+            echo 'Build failed!'
+        }
+    }
+}
