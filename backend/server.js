@@ -7,8 +7,8 @@ const cors = require('cors');
 // Create an Express application instance
 const app = express();
 
-// Set the port for the server to listen on, using an environment variable if available, or defaulting to 5000
-const PORT = process.env.PORT || 5000;
+// Set the port for the server to listen on, using an environment variable if available, or defaulting to 3000
+const PORT = process.env.PORT || 3000;
 
 // Use the CORS middleware to enable cross-origin requests from any origin
 app.use(cors());
